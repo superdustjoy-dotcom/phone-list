@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企業分機通訊錄 - 完整版</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { background-color: #eceff1; font-family: "Microsoft JhengHei", sans-serif; padding: 20px; }
+        .main-container { max-width: 1000px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .sticky-header { position: sticky; top: 0; background: white; z-index: 100; padding-bottom: 10px; border-bottom: 2px solid #dee2e6; }
+        .table-wrapper { height: 65vh; overflow-y: auto; margin-top: 15px; border: 1px solid #dee2e6; }
+        .btn-add { background-color: #007bff; color: white; }
+        .search-input { border: 2px solid #007bff; border-radius: 25px; padding-left: 20px; }
+        tr:hover { background-color: #f1f8ff !important; }
+        .counter-badge { font-size: 0.9rem; background: #6c757d; color: white; padding: 4px 12px; border-radius: 15px; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="main-container">
+    <div class="sticky-header">
+        <h3 class="text-center mb-3">🏢 企業分機自動查詢系統 (全資料版)</h3>
+        
+        <div class="row align-items-center mb-3">
+            <div class="col-md-8">
+                <input type="text" v-model="searchQuery" class="form-control search-input" placeholder="🔍 輸入姓名、部門、地點或分機進行雙向搜尋...">
+            </div>
+            <div class="col-md-4 text-end">
+                <span class="counter-badge">總計筆數：{{ filteredList.length }} / {{ dataList.length }}</span>
+            </div>
+        </div>
+
+        <div class="row g-2 p-2 bg-light rounded border">
+            <div class="col-md-5">
+                <input type="text" v-model="form.name" class="form-control" placeholder="輸入姓名/部門">
+            </div>
+            <div class="col-md-5">
+                <input type="text" v-model="form.ext" class="form-control" placeholder="輸入分機號碼">
+            </div>
+            <div class="col-md-2">
+                <button v-if="editIdx === null" @click="addItem" class="btn btn-primary w-100">新增</button>
+                <button v-else @click="updateItem" class="btn btn-success w-100">更新</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="table table-striped align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width: 50%">姓名 / 部門 / 名稱</th>
+                    <th style="width: 30%">分機號碼</th>
+                    <th style="width: 20%" class="text-center">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="(item, index) in filteredList" :key="index">
+                    <td class="fw-bold">{{ item.name }}</td>
+                    <td class="text-primary fw-bold">{{ item.ext }}</td>
+                    <td class="text-center">
+                        <button @click="editItem(item)" class="btn btn-sm btn-outline-secondary me-1">編輯</button>
+                        <button @click="deleteItem(item)" class="btn btn-sm btn-outline-danger">刪除</button>
+                    </td>
+                </tr>
+                <tr v-if="filteredList.length === 0">
+                    <td colspan="3" class="text-center py-5 text-muted">查無匹配資料，請嘗試其他關鍵字</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-3 text-muted small">
+        * 資料已自動儲存於瀏覽器緩存，重新開啟網頁不會消失。
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, watch } = Vue;
+
+createApp({
+    setup() {
+        // 嚴格掃描圖片後代入的所有原始資料
+        const rawData = [
+            // 高階主管
+            {name: "許照信", ext: "188"}, {name: "張立秋", ext: "183 / 187 / 601"}, {name: "謝德夫", ext: "801"},
+            {name: "許仁壽", ext: "711"}, {name: "王雪玲", ext: "186"}, {name: "莊武璋", ext: "189 / 602"},
+            {name: "鍾曉芬", ext: "805"}, {name: "李明宗", ext: "121 / 603"}, {name: "文元民", ext: "112"},
+            {name: "池熙培", ext: "111"}, {name: "范瀞文", ext: "807"}, {name: "陳宜慈", ext: "827"},
+            // 稅會/財會/人資
+            {name: "呂秋嫻", ext: "202"}, {name: "黃委玲", ext: "203"}, {name: "鍾瑞英", ext: "205"},
+            {name: "黃瀞儀", ext: "206"}, {name: "周琇君", ext: "207"}, {name: "洪素琴", ext: "208"},
+            {name: "王暄汝", ext: "209"}, {name: "李珮菱", ext: "210"}, {name: "江清如", ext: "211"},
+            {name: "李及尹", ext: "220"}, {name: "楊郁君", ext: "218"}, {name: "李昂音", ext: "221"},
+            {name: "賴鈴文", ext: "222"}, {name: "李翠芳", ext: "200"}, {name: "李麗娜", ext: "821"},
+            {name: "李秀霞", ext: "822"}, {name: "許真真", ext: "826"}, {name: "黃雅婷", ext: "828"},
+            // 總務/資訊/資材
+            {name: "張長滔", ext: "231"}, {name: "江維", ext: "232"}, {name: "洪婉琪", ext: "233"},
+            {name: "陳秋伶", ext: "235"}, {name: "李維媛", ext: "100"}, {name: "溫怡明", ext: "225"},
+            {name: "許瀚昌", ext: "224"}, {name: "李佩芬", ext: "226"}, {name: "王勝興", ext: "227"},
+            {name: "李福清", ext: "228"}, {name: "陳梅仙", ext: "229"}, {name: "郭政億", ext: "251"},
+            {name: "王炳勛", ext: "252"}, {name: "易祥", ext: "106"}, {name: "林奕綺", ext: "107"},
+            {name: "溫琇清", ext: "125"}, {name: "陳宜芝", ext: "129"}, {name: "羅婕瑜", ext: "127"},
+            // 業務/行銷/專案
+            {name: "梁建文", ext: "300"}, {name: "朱俊明", ext: "351"}, {name: "王坤騰", ext: "350"},
+            {name: "蕭春啟", ext: "352"}, {name: "許品珊", ext: "357"}, {name: "候秋蘭", ext: "356"},
+            {name: "黃玉如", ext: "358"}, {name: "林志男", ext: "353"}, {name: "吳秋麗", ext: "360"},
+            {name: "周淑萍", ext: "355"}, {name: "陳郁茹", ext: "361"}, {name: "蔡欣怡", ext: "362"},
+            {name: "許瑞雅", ext: "363"}, {name: "林淑婷", ext: "365"}, {name: "李貞慧", ext: "310/316"},
+            {name: "曾紀龍", ext: "313"}, {name: "林淑鈴", ext: "312"}, {name: "楊宜曉", ext: "314"},
+            {name: "沈芷亦", ext: "329"}, {name: "陳曉晴", ext: "311"}, {name: "張淳莉", ext: "315"},
+            {name: "任偉誠", ext: "343"}, {name: "黃婧雅 Grace", ext: "338"}, {name: "洪明鈺", ext: "865"},
+            {name: "葉益銘", ext: "892"}, {name: "林麗玲", ext: "888"}, {name: "林小薰", ext: "863"},
+            {name: "梁耀升", ext: "866"}, {name: "張怡倩", ext: "867"}, {name: "黃曼綺", ext: "868"},
+            {name: "張穎慧", ext: "869"},
+            // 醫院課相關/法務
+            {name: "謝予惠", ext: "617"}, {name: "鄭智遠", ext: "619"}, {name: "郭惠玲", ext: "320"},
+            {name: "曾彥慈", ext: "321"}, {name: "黃文亭", ext: "322"}, {name: "吳榮欣", ext: "323"},
+            {name: "李金美", ext: "325"}, {name: "張品筑", ext: "326"},
+            // 業務課/行銷課 (Winnie等)
+            {name: "薛文卿 Winnie", ext: "330"}, {name: "張雅芳 Avon", ext: "336"}, {name: "楊琬雯 Irene", ext: "334"},
+            {name: "梁嘉文 Phoenix", ext: "333"}, {name: "林映君 Jessica", ext: "335"}, {name: "林庭瑋 Vivian", ext: "337"},
+            {name: "林宛嫻 Tammy", ext: "340"}, {name: "洪于晴 Kris", ext: "341"},
+            // 6xx 系列人員 (image_e3e8a1)
+            {name: "游國健", ext: "605"}, {name: "曾祥典", ext: "606"}, {name: "吳予恩", ext: "607"},
+            {name: "陳玉梅", ext: "609"}, {name: "張智鈞", ext: "610"}, {name: "鄭昌明", ext: "611"},
+            {name: "潘俐姆", ext: "612"}, {name: "鄭麗菁", ext: "613"}, {name: "吳宛芸", ext: "615"},
+            {name: "陳欣家", ext: "616"}, {name: "葉美娟", ext: "618"}, {name: "羅義鳳", ext: "620"},
+            {name: "許珮暄", ext: "621"}, {name: "林政諭", ext: "622"}, {name: "郭彥嶸", ext: "623"},
+            {name: "陳婉婷", ext: "625"}, {name: "吳羿挺", ext: "626"}, {name: "江劍影", ext: "158"},
+            // 順吉成 (7xx 系列)
+            {name: "總經理室", ext: "700"}, {name: "黃雅伶", ext: "789"}, {name: "何孟芳", ext: "788"},
+            {name: "樞怡", ext: "715"}, {name: "吳凱仁", ext: "730"}, {name: "林峰儀", ext: "731"},
+            {name: "楊沛儒", ext: "732"}, {name: "吳佳興", ext: "733"}, {name: "詹挺鈺", ext: "734"},
+            {name: "張芸禎", ext: "735"}, {name: "陳俊瑋", ext: "736"}, {name: "魏詩耕", ext: "737"},
+            // 8xx 業務行政/活力讚
+            {name: "范如儀", ext: "809"}, {name: "林緯嘉", ext: "831"}, {name: "楊麗華", ext: "832"},
+            {name: "陳怡孝", ext: "835"}, {name: "吳佳菁", ext: "836"}, {name: "蕭佳森", ext: "839"},
+            {name: "黃楷翔", ext: "876"}, {name: "鐘晨維", ext: "873"}, {name: "徐永龍", ext: "825"},
+            {name: "連冠雅", ext: "829"}, {name: "翁川惠", ext: "800"}, {name: "陳淑美", ext: "808"},
+            {name: "藍月伶", ext: "885"}, {name: "俞昌興", ext: "881"}, {name: "廖彩秀", ext: "838"},
+            {name: "任珮瑄", ext: "895"},
+            // 彰化廠人員
+            {name: "張育豪", ext: "102"}, {name: "陳新育", ext: "100"}, {name: "陳菱雅", ext: "104"},
+            {name: "謝佳芸", ext: "105"}, {name: "黃文駿", ext: "106"}, {name: "李宜庭", ext: "304"},
+            {name: "尤虹鈞", ext: "307"}, {name: "林彥辰", ext: "308"}, {name: "王詠瑜", ext: "311"},
+            {name: "蘇芳瑤", ext: "312"}, {name: "陳逸蓉", ext: "306"}, {name: "彰化廠(代表)", ext: "431 / 432"},
+            // 其它生產/品研/化驗室 (2xx / 5xx 系列)
+            {name: "徐君豪", ext: "210"}, {name: "杜易學", ext: "211"}, {name: "鄭國隆", ext: "212/321"},
+            {name: "丁依紋", ext: "213"}, {name: "林雅惠", ext: "215"}, {name: "唐燕茹", ext: "216"},
+            {name: "唐誼芳", ext: "217"}, {name: "何香卿", ext: "218"}, {name: "宋節", ext: "219/319"},
+            {name: "王麗華", ext: "232/220"}, {name: "王世揚", ext: "266"}, {name: "邱鳳蘭", ext: "324"},
+            {name: "蔡茂欽", ext: "255"}, {name: "鄭麗慧", ext: "531"}, {name: "薛良正", ext: "562"},
+            {name: "孫敏敏", ext: "537"}, {name: "周麗香", ext: "514"}, {name: "李育儒", ext: "563"},
+            {name: "陳秀芳", ext: "561"}, {name: "簡協銓", ext: "257/220"}, {name: "陳彥安", ext: "227/228"},
+            {name: "廖義和", ext: "618"}, {name: "方子清", ext: "633"}, {name: "陳進財", ext: "642"},
+            {name: "廖讚旺", ext: "322"}, {name: "蔡鳳依", ext: "242"}, {name: "鍾娟碧", ext: "212"},
+            {name: "林毓麟", ext: "215"}, {name: "林盈翰", ext: "217"}, {name: "陳柏諺", ext: "304"},
+            {name: "王重量", ext: "211"}, {name: "楊佳羚", ext: "218"}, {name: "王瀞儀", ext: "311"},
+            {name: "王秀碧", ext: "313"}, {name: "陳雅華", ext: "312"}, {name: "洪慈羚", ext: "213"},
+            {name: "陳筱惠", ext: "214"}, {name: "黃子峰", ext: "290 / 230"}, {name: "江俊澤", ext: "291"},
+            {name: "陳益元", ext: "252 / 254"}, {name: "李鍾聖", ext: "235"}, {name: "呂偉立", ext: "293"},
+            {name: "林錫壕", ext: "294"}, {name: "陳逢春", ext: "230 / 295"}, {name: "張景智", ext: "219"},
+            {name: "王麗卿", ext: "320"}, {name: "余思慧", ext: "245"}, {name: "顏維瑩", ext: "347"},
+            {name: "趙恒祥", ext: "265"}, {name: "洪翊芳", ext: "347"}, {name: "賴彥駿", ext: "264"},
+            {name: "陳慧徹", ext: "244"}, {name: "賴振峰", ext: "361"}, {name: "溫惠姍", ext: "343"},
+            {name: "張曉萍", ext: "341"}, {name: "邱億琇", ext: "342"}, {name: "王喻萱", ext: "346"},
+            {name: "謝浚賢", ext: "262"}, {name: "尤道黑薩", ext: "251"}, {name: "羅文博", ext: "250/241"},
+            {name: "蘇文振", ext: "232/299"}, {name: "陳俊羽", ext: "270/247"}, {name: "林添進", ext: "259"},
+            {name: "蕭永騎", ext: "241"}, {name: "楊弘瑋", ext: "299"}, {name: "詹明杰", ext: "247/250"},
+            {name: "趙慧雅", ext: "273"},
+            // 5xx 人員 (image_e3e939)
+            {name: "林國泰", ext: "500"}, {name: "林佳旻", ext: "501"}, {name: "蔡寬慈", ext: "502"},
+            {name: "杜秉宸", ext: "503"}, {name: "陳至真", ext: "504"}, {name: "謝亞庭", ext: "505"},
+            {name: "黃威凱", ext: "500"}, {name: "黃珮紋", ext: "506"}, {name: "周佳蕙", ext: "507"},
+            {name: "許惠茹", ext: "509"},
+            // 廠外/合作單位 (image_e3ec43)
+            {name: "新店廠", ext: "001 / 892"}, {name: "順天本草", ext: "002 / 211"}, {name: "台北公司", ext: "003 / 803"},
+            {name: "開發", ext: "896"}, {name: "儲運課", ext: "898"}, {name: "中國生化", ext: "008"},
+            {name: "明工電機", ext: "009"}, {name: "大鉅", ext: "011"}, {name: "榮輔垃圾", ext: "014"},
+            {name: "茂技", ext: "043"}, {name: "松優", ext: "044"}, {name: "鎮江機械", ext: "045"},
+            {name: "華興", ext: "061"}, {name: "優美公司", ext: "062"}, {name: "中區毒災應變隊", ext: "065 / 066"},
+            {name: "順億童先生", ext: "070"}, {name: "世順許先生", ext: "071"}, {name: "科恩", ext: "072"},
+            {name: "中國快遞", ext: "074"}, {name: "新竹貨運", ext: "075"}, {name: "國通計程車", ext: "076"},
+            {name: "太達電訊", ext: "077"},
+            // 特殊地點/會議室
+            {name: "會議室(張立秋側)", ext: "636"}, {name: "MS室", ext: "665"}, {name: "HPLC室", ext: "666 / 528 / 344"},
+            {name: "GC室", ext: "667"}, {name: "品保室", ext: "668"}, {name: "理化室(1)", ext: "669"},
+            {name: "理化室(2)", ext: "670"}, {name: "化驗室", ext: "529 / 243"}, {name: "微生物室", ext: "555 / 239"},
+            {name: "實驗工廠", ext: "511"}, {name: "恆溫恆濕室", ext: "511"}, {name: "萃取3F", ext: "234"},
+            {name: "一樓半製品室", ext: "292"}, {name: "中間製品室(2)", ext: "296"}, {name: "外銷分裝室", ext: "297"},
+            {name: "鋁箔分裝室", ext: "236"}, {name: "守衛室", ext: "255"}, {name: "一樓參觀走道", ext: "298"},
+            {name: "觀光工廠-陳惠萍", ext: "280"}, {name: "Sachet分包裝室", ext: "261"}, {name: "二樓新會議廳", ext: "281"},
+            {name: "一樓會議室", ext: "238"}, {name: "女生休息室", ext: "248"}, {name: "男生休息室", ext: "249"},
+            {name: "三樓會議室", ext: "300"}, {name: "三樓影印室", ext: "301"}, {name: "二樓影印室", ext: "266"},
+            {name: "品管課辦公室", ext: "345"}, {name: "工務室", ext: "253"}, {name: "3F資訊機房", ext: "348"},
+            {name: "集思會議室(小)", ext: "690"}, {name: "群策會議室(中)", ext: "691"}, {name: "鴻源紀念廳(大)", ext: "692"},
+            {name: "事務機", ext: "101"}, {name: "大廳電梯旁", ext: "102"},
+            // 其它人員
+            {name: "洪得倉", ext: "11"}, {name: "洪淑惠", ext: "12"}, {name: "紀盛義", ext: "13"},
+            {name: "蘇芳德", ext: "14"}, {name: "許育綾", ext: "15"}, {name: "徐鴻毅", ext: "16"}
+        ];
+
+        const dataList = ref([]);
+        const searchQuery = ref("");
+        const form = ref({ name: "", ext: "" });
+        const editIdx = ref(null);
+
+        onMounted(() => {
+            const saved = localStorage.getItem("company_phone_book_v2");
+            dataList.value = saved ? JSON.parse(saved) : rawData;
+        });
+
+        watch(dataList, (newVal) => {
+            localStorage.setItem("company_phone_book_v2", JSON.stringify(newVal));
+        }, { deep: true });
+
+        const filteredList = computed(() => {
+            const q = searchQuery.value.toLowerCase().trim();
+            return dataList.value.filter(i => 
+                i.name.toLowerCase().includes(q) || i.ext.includes(q)
+            ).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+        });
+
+        const addItem = () => {
+            if (!form.value.name || !form.value.ext) return alert("請輸入完整資料");
+            dataList.value.unshift({ ...form.value });
+            form.value = { name: "", ext: "" };
+        };
+
+        const editItem = (item) => {
+            editIdx.value = dataList.value.indexOf(item);
+            form.value = { ...item };
+            window.scrollTo(0, 0);
+        };
+
+        const updateItem = () => {
+            if (editIdx.value !== null) {
+                dataList.value[editIdx.value] = { ...form.value };
+                editIdx.value = null;
+                form.value = { name: "", ext: "" };
+            }
+        };
+
+        const deleteItem = (item) => {
+            if (confirm(`確定刪除「${item.name}」嗎？`)) {
+                dataList.value = dataList.value.filter(i => i !== item);
+            }
+        };
+
+        return { dataList, searchQuery, filteredList, form, editIdx, addItem, editItem, updateItem, deleteItem };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
